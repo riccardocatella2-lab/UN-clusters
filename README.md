@@ -2,150 +2,178 @@
 
 **Research question:** Can the world be meaningfully divided into only two groups (developed vs. developing countries), or does the data suggest a more complex structure?
 
-**Short answer:** No. A two-group split exists statistically, but it only separates a high-mortality "tail" from everyone else and puts Norway and Tajikistan in the same group. The data form a **continuum** along one development axis. Four clusters describe it much better, and they line up with the four income levels in Rosling's *Factfulness*.
+**Short answer:** No. A two-group split exists statistically, but it only separates a high-mortality "tail" from everyone else, putting Switzerland and Tajikistan in the same group. The countries form a **continuum** along one development axis, and **four clusters** describe it much better. Those four clusters line up with the four levels in Hans Rosling's *Factfulness*.
 
-![Four worlds](figures/11_four_worlds_representatives.png)
+![Four worlds](figures/14_four_worlds_representatives.png)
 
 ## Repository contents
 
 | File | What it is |
 |---|---|
-| `un_clusters_analysis.ipynb` | Complete analysis, executed, with all outputs and interpretation |
+| `un_clusters_analysis.ipynb` | Complete analysis (Parts 1–4 + answers), executed, with all outputs and interpretation |
 | `UN.csv` | Dataset ([source](https://raw.githubusercontent.com/manoelgadi/PSDMA/refs/heads/main/datasets/UN.csv)) |
-| `figures/` | All charts produced by the notebook |
+| `figures/` | All 14 charts produced by the notebook |
 | `PRESENTATION.md` | 2–3 minute talk script |
 | `requirements.txt` | Python packages |
 
-**Reproduce:** `pip install -r requirements.txt`, then run all cells of the notebook (or `jupyter nbconvert --to notebook --execute un_clusters_analysis.ipynb`). All random steps use `random_state=42`.
+**Reproduce:** `pip install -r requirements.txt`, then run all cells of the notebook. All random steps use fixed seeds.
 
-> **Note on the data:** these UN indicators date from the late 1990s (it is the `UN` dataset from John Fox's *car* R package). Country positions describe that period, not today.
+> **Note on the data:** the UN indicators date from the late 1990s (the `UN` dataset in John Fox's *car* R package), so country positions describe that period, not today.
+
+## How this combines our group's work
+
+Three of us analysed the data independently. All three drafts agreed on the main conclusion: k = 2 has the best silhouette but is not meaningful, and k = 4 is the better description. The drafts differed in how they prepared the data. This final version keeps the strongest part of each draft and resolves the conflicts:
+
+| Element | From | Why |
+|---|---|---|
+| Test of whether values are missing at random (Mann-Whitney), regression imputation | Draft B | Missingness follows development, so a single median fill is biased |
+| Bartlett / KMO, Mahalanobis outliers, variable contributions, ARI by number of PCs, bootstrap stability | Draft B | Formal evidence that PCA is appropriate and useful |
+| Log of GDP only, Ward dendrogram, silhouette profiles, cluster fingerprints, R² comparison | Draft C | Keeps clusters ordered by development level; cross-checks with Session 7 methods |
+| Factfulness level names and lifestyle descriptions, full country lists, median-GDP chart | Draft A | Links the clusters to the book; membership is easy to check |
+
+**Two corrections came out of comparing the drafts:**
+- **Draft A kept countries with almost no data.** It filled every gap with the global median, so Monaco, San Marino and Liechtenstein landed in the rich cluster on imputed values alone. We drop the 16 countries missing more than 4 of the 10 variables.
+- **Draft B also log-transformed illiteracy.** That stretches 0.3% vs 3% as much as 3% vs 30%. Combined with near-zero values reported by ex-Soviet countries, it created a "near-zero illiteracy" cluster that is poorer than the cluster ranked below it. We keep illiteracy unlogged and report the logged version as a robustness check (Part 3.6).
 
 ---
 
 ## Part 1: Data preparation
 
-207 countries × 12 numeric indicators (plus `country` and `region`, used only to interpret results).
-
 | # | Decision | Why |
 |---|---|---|
-| 1 | Drop `educationMale` / `educationFemale` | 63% missing. Imputing two-thirds of a column would invent most of it, and illiteracy carries similar information |
-| 2 | Drop 16 countries missing more than 4 of the 10 remaining variables | Their profile would be mostly imputed. They are mainly micro-states (Andorra, Monaco, Tuvalu…) and disrupted territories (Somalia, Gaza Strip) |
-| 3 | Fill remaining gaps (9.9% of cells) with the **regional median** | Neighbours are more similar than the world average, and the median is robust to skew. This is an improvement over the global-median fill used in Session 7 |
-| 4 | `log10(GDPperCapita)`; keep all other outliers | GDP skewness falls from 2.0 to 0.0. Other extreme values (very high infant mortality, very low female labour participation in the Gulf) are real signal |
-| 5 | Standardise all 10 variables (z-scores) | Without scaling, GDP's variance (≈ 80 million) is millions of times larger than fertility's (≈ 3). PCA on raw data is 100% GDP |
+| 1 | Drop `educationMale` / `educationFemale` | 63% missing; schooling is largely captured by illiteracy |
+| 2 | Drop 16 countries missing more than 4 of 10 variables | Their profile would be mostly imputed (micro-states such as Andorra and Monaco; disrupted territories such as Somalia and Gaza Strip) |
+| 3 | Regression imputation (`IterativeImputer`) for the remaining 9.9% of cells | Illiteracy is missing mostly for **rich** countries and economic activity mostly for **poor** ones (Mann-Whitney p < 0.001). A global median would give rich countries 20% female illiteracy; regression gives 8.8% |
+| 4 | `log10(GDPperCapita)` only; keep all outliers | GDP skewness drops from 2.0 to 0.0. Other extreme values are real, and the only multivariate outlier (Maldives) barely affects results |
+| 5 | Standardise all variables (z-scores) | Without scaling, PCA is 100% GDP (raw) or dominated by infant mortality (after logging GDP). These are artefacts of units, not patterns |
 
 **Final matrix:** 191 countries × 10 variables.
 
 ## Part 2: PCA
 
-![Scree](figures/03_scree.png)
+Bartlett's test p ≈ 0 and KMO = 0.86, so the data are well suited to PCA.
 
 | PC | % variance | Cumulative | Main variables |
 |---|---|---|---|
-| PC1 | 65.3% | 65.3% | life expectancy (+), infant mortality (−), fertility (−), contraception (+), illiteracy (−), log GDP (+), all with roughly equal weight |
-| PC2 | 11.5% | 76.8% | female economic activity (+0.89) |
-| PC3 | 8.7% | 85.4% | male economic activity (+0.87) |
-| PC4 | 5.3% | **90.8%** | mixed residual (illiteracy, contraception, GDP; hard to interpret) |
+| PC1 | 67.1% | 67.1% | life expectancy, infant mortality, illiteracy, fertility, contraception, log GDP (all similar weight) |
+| PC2 | 11.6% | 78.7% | female economic activity (81.5% of PC2) |
+| PC3 | 8.7% | 87.4% | male economic activity |
+| PC4 | 4.4% | **91.8%** | mixed (income, literacy, contraception) |
 
-**4 components explain 90%+ of the variance.** We cluster on these 4 PC scores.
+**4 components explain 90%+ of the variance.** Clustering on them gives almost the same groups as clustering on all 10 variables (ARI 0.90).
 
-![Loadings](figures/04_loadings.png)
+![Loadings](figures/05_loadings.png)
 
 ## Part 3: How many clusters?
 
-![Choosing k](figures/07_choosing_k.png)
+![Choosing k](figures/08_choosing_k.png)
 
 | k | R² (between-SS / total) | Silhouette | Bootstrap stability (ARI) |
 |---|---|---|---|
-| **2** | 55% | **0.49** | 0.95 |
-| 3 | 66% | 0.32 | 0.79 |
-| **4** | **71%** | 0.29 | 0.74 |
-| 5 | 75% | 0.28 | 0.70 |
-| 6 | 78% | 0.25 | 0.59 |
+| **2** | 56% | **0.49** | 0.94 |
+| 3 | 66% | 0.33 | 0.78 |
+| **4** | **72%** | 0.28 | 0.76 |
+| 5 | 76% | 0.27 | 0.71 |
+| 6 | 78% | 0.26 | 0.62 |
 
-![k=2 vs k=4](figures/09_pca_k2_vs_k4.png)
+![k = 2, 3, 4](figures/09_pca_k2_k3_k4.png)
 
-Robustness of the k = 4 solution: the ARI against our solution is 0.97 when clustering on all 10 variables instead of 4 PCs, 1.00 when outliers are capped at the 1st/99th percentile, and 0.87 when the 23 most-imputed countries are excluded. A Ward dendrogram (as in Session 7) also makes its first big cut at k = 2. Below that cut there is no clear second gap, which is what a continuum looks like. Its 4-group cut is also ordered by development level, but the boundaries fall in different places (ARI 0.47).
+**Robustness of k = 4** (ARI against the main solution):
+
+| Alternative | ARI |
+|---|---|
+| No PCA (all 10 variables) | 0.90 |
+| Region-median imputation | 0.80 |
+| Global-median imputation | 0.89 |
+| Without the outlier | 0.98 |
+| Ward hierarchical clustering | 0.67 |
+| Log of illiteracy and infant mortality | 0.46 |
+
+The two extremes are stable across all of these. The boundaries in the middle are soft.
 
 ## Part 4: The four clusters
 
-![Fingerprints](figures/10_cluster_fingerprints.png)
+![Fingerprints](figures/12_cluster_fingerprints.png)
 
-| Cluster | n | Representative | Median fertility | Median infant mortality | Median female life exp. | Median GDP/cap | ≈ $/day | Factfulness |
-|---|---|---|---|---|---|---|---|---|
-| C1 | 40 | **Nigeria** | 5.7 | 100 | 52 | $287 | 0.8 | Level 1 |
-| C2 | 31 | **India** | 4.8 | 56 | 64 | $1,265 | 3.5 | Level 2 |
-| C3 | 61 | **Mexico** | 2.8 | 25 | 73 | $1,860 | 5.1 | Level 3 |
-| C4 | 59 | **Portugal** | 1.8 | 8 | 79 | $11,854 | 32.5 | Level 4 |
+| Cluster | n | Representative | Fertility | Infant mortality | Female life exp. | Female illiteracy | Median GDP/cap |
+|---|---|---|---|---|---|---|---|
+| C1 · Level 1: low income, high mortality | 37 | **Ethiopia** | 5.8 | 103 | 52 | 70% | \$293 |
+| C2 · Level 2: early transition | 38 | **India** | 4.8 | 56 | 63 | 40% | \$1,156 |
+| C3 · Level 3: the middle | 63 | **Colombia** | 2.8 | 23 | 74 | 8% | \$1,860 |
+| C4 · Level 4: high income, long lives | 53 | **Portugal** | 1.7 | 7 | 80 | 5% | \$14,111 |
 
-Representatives were chosen from the third of each cluster closest to its centroid: Nigeria is 12th of 40, India 2nd of 31, Mexico 18th of 61 and Portugal 5th of 59.
+Each representative is among the 5 countries closest to its cluster centre and has no imputed values.
 
 ---
 
 ## Answers to the six questions
 
 ### 1. Can the world be meaningfully divided into only two clusters?
-**No, not meaningfully.** K-Means with k = 2 does give the best-separated solution (silhouette 0.49), but it is not the "developed vs. developing" divide people imagine. It is a lopsided 58 vs. 133 split. Cluster 1 holds high-fertility, high-mortality countries, mostly sub-Saharan Africa plus Afghanistan, Bangladesh, Nepal and Haiti. Cluster 2, the so-called "developed" group, contains **everyone else**:
-- GDP per capita ranges from $122 (Tajikistan) to $42,416 (Switzerland), a 350× range.
-- Infant mortality ranges from 2 to 78 per 1,000.
-- Fertility ranges from 1.2 to 7.2 children per woman.
+**Statistically yes, meaningfully no.** The two-cluster solution is the best separated (silhouette 0.49), but it is a lopsided split of 59 vs. 132 countries:
+- **Cluster 1** holds high-fertility, high-mortality countries: mostly sub-Saharan Africa plus Afghanistan, Pakistan, India and Bangladesh.
+- **Cluster 2**, the "developed" group, contains everyone else. Its GDP per capita ranges from **\$122 (Tajikistan) to \$42,416 (Switzerland)**, a 350× range. Infant mortality ranges from 2 to 78 per 1,000 and fertility from 1.2 to 7.2.
 
-Norway, Indonesia and Bolivia end up in the same group. The 2-cluster split separates a tail, not two worlds.
+It captures only **56%** of the data's structure. It separates a tail, not two worlds.
 
 ### 2. How many clusters does the data suggest?
-- **Elbow rule:** inertia falls steeply up to k = 4–5 and flattens after. An objective elbow detector (maximum distance to the chord) gives k = 5, with k = 4 virtually tied (0.219 vs. 0.223).
-- **Silhouette, Calinski-Harabasz, Davies-Bouldin:** all favour k = 2. These metrics reward the single largest gap in the data, which is the high-mortality tail. They have no competing peak, as expected for a continuum.
+- **Elbow rule:** a gradual bend in the **k = 4–5** region. The objective detector picks 5, with 4 virtually tied.
+- **Silhouette, Calinski-Harabasz and Davies-Bouldin:** all favour **k = 2**. They reward the single widest gap in what is otherwise a continuum.
 - **R²:** gains shrink after k = 4.
-- **Bootstrap stability:** acceptable up to k = 4 (0.74) and keeps falling after (0.59 at k = 6).
+- **Bootstrap stability:** acceptable up to k = 4 (0.76), then falls.
 
-Weighing all the evidence, we choose **k = 4**, with k = 3 as a reasonable alternative.
+Weighing all the evidence, we choose **k = 4**; k = 3 and 5 are also defensible. A Ward dendrogram tells the same story: one big first cut, then no clear second gap.
 
-### 3. How much of the data structure do two clusters capture compared with four?
-- **k = 2:** 55% of the total variance (between-cluster sum of squares / total, in the 4-PC space).
-- **k = 4:** 71% of the total variance.
+### 3. How much structure do two clusters capture compared with four?
+- **k = 2:** 56% of the total variance (between-cluster share in the 4-PC space).
+- **k = 4:** 72%, which is 16 percentage points more.
 
-Four clusters capture 16 percentage points more of the structure, and every cluster has a distinct, interpretable profile.
+The remaining 28% sits *within* clusters, further evidence of a continuum.
 
-### 4. Does the evidence support the *Factfulness* argument?
-**Largely yes.** Three pieces of evidence support it:
-- The PC1 histogram and the PCA map show a continuum with most countries in the middle, not two separated blobs.
-- The four K-Means clusters are ordered along the development axis.
-- The cluster medians (≈ $0.8, $3.5, $5, $32 per day) roughly follow Rosling's four income levels.
+### 4. Does the evidence support *Factfulness*?
+**Largely yes.**
+- The PCA map shows a continuum with most countries in the middle, not two blobs.
+- The four clusters are ordered along the development axis, and their profiles match Rosling's four levels: from no shoes and water fetched on foot, to bicycles, to motorbikes and running water, to cars.
+- Our 1990s GDP figures are not in Rosling's purchasing-power dollars, so the match is in ordering, not exact thresholds.
 
-One honest caveat: because the data are a continuum, the exact boundaries between levels depend on the method (Ward places them differently). This also supports Rosling's point that there is no gap separating "us" and "them".
+Two caveats:
+- On a continuum, the exact boundaries depend on the method.
+- Silhouette alone would pick two groups.
+
+Both caveats support Rosling's deeper point: there is no gap separating "us" from "them", only a gradient that several levels describe better than two.
 
 ### 5. What does PCA tell us about the variables that differentiate countries?
-- **One dimension dominates.** PC1 explains 65% of the variance, and life expectancy, infant mortality, fertility, contraception, literacy and income all load on it with similar weight. Development is a *bundle*: health, family size, education and income move together.
-- **The second dimension is women's economic activity** (PC2, 12%). It separates countries at the *same* development level. For example, Saudi Arabia (7% female participation) and China (73%) differ sharply on PC2.
-- Four PCs keep 91% of the information, so PCA reduces redundancy (male/female pairs, mortality vs. life expectancy) before clustering. It also provides the 2-D map used to visualise the clusters.
+- **One dimension dominates.** PC1 explains 67% of the variance. Life expectancy, infant mortality, fertility, contraception, illiteracy and income all load on it with similar weight, so development is a *bundle*. Health and demography separate countries more than GDP does: log GDP contributes 9% to PC1, against 13–14% each for female life expectancy and infant mortality.
+- **The second dimension is women's economic activity** (PC2, 12%). It separates countries at the *same* development level. For example, Saudi Arabia (7% female participation) and China sit far apart on PC2 although both are mid-development.
+- **Four PCs keep 92% of the information**, so PCA removes redundancy before clustering.
 
 ### 6. How would you describe the clusters, using one representative country each?
 
-**C1, Nigeria: high fertility, high mortality, very low income (Level 1).**
-- *Profile:* about 6 children per woman, 6% contraceptive use, infant mortality of 77 per 1,000, life expectancy of 51/54 years, and around half of women illiterate.
+**C1, Ethiopia (Level 1): high fertility, high mortality, extreme poverty.**
+- *Profile:* 7 children per woman, 4% contraceptive use, infant mortality of 107, life expectancy of 48/52, three in four women illiterate.
 - *Members:* mostly sub-Saharan Africa.
-- *Surprise:* Haiti, Afghanistan, Nepal, Bangladesh, Laos and Cambodia are here too. The cluster is defined by living conditions, not by continent.
+- *Surprise:* Haiti, Afghanistan, Nepal and Bangladesh are here too. Afghanistan has the cluster's highest reported GDP (\$2,848) and is the member farthest from the centre, so income did not translate into health.
 
-**C2, India: early transition with low female participation (Level 2).**
-- *Profile:* India is the 2nd most typical member. Fertility is about 3, infant mortality 72, female illiteracy 62% and female economic activity 34%.
-- *Members:* Pakistan, Egypt, Morocco, Yemen, Kenya, Ghana.
-- *What sets it apart:* this cluster has the lowest values on PC2 (women's labour participation and literacy).
+**C2, India (Level 2): early transition, with few women in paid work.**
+- *Profile:* India is the 2nd most typical member. Fertility is falling (3.1) and life expectancy is about 62, but infant mortality is still 72, female illiteracy is 62% and female economic activity is 34%.
+- *Members:* Pakistan, Egypt, Morocco, Iran, Kenya, Ghana, Bolivia.
+- *What sets it apart:* the lowest female labour participation of any cluster.
 - *Surprises:*
-  - **Saudi Arabia and Oman** are here despite roughly 10× India's income. Their fertility and female indicators match C2.
-  - **Botswana, Namibia and Zimbabwe** are here because AIDS pulled down their life expectancy despite middling incomes.
+  - **Saudi Arabia, Oman and Libya** are here despite much higher incomes, because their fertility and female indicators match.
+  - **Botswana, Namibia and Zimbabwe** are here because AIDS lowered their life expectancy.
 
-**C3, Mexico: the big middle (Level 3).**
-- *Profile:* fertility 2.75, infant mortality 31, female life expectancy 75.5, GDP per capita $2,700.
-- *Members:* the largest and most geographically diverse cluster. It includes Latin America, China, Indonesia and Thailand, and the former Soviet Union.
+**C3, Colombia (Level 3): the big middle.**
+- *Profile:* Colombia is within a few percent of the cluster median on most variables. Fertility is 2.7, contraception 72%, infant mortality 24 and GDP \$2,215.
+- *Members:* the largest and most diverse cluster. It includes Latin America, China, Indonesia, Thailand, Viet Nam and the former USSR.
 - *Surprises:*
-  - **Qatar, Kuwait and the UAE** (incomes similar to Europe's) share this cluster with **China** ($582 GDP per capita).
-  - **Russia** is here, not in C4, because of its 1990s mortality.
+  - It spans Tajikistan (\$122) to New Caledonia (\$19,450).
+  - The **UAE and Qatar** have incomes like Europe's but health and demography like Colombia's.
+  - **Russia** is here because of high 1990s adult mortality.
 
-**C4, Portugal: low fertility, long lives, high income (Level 4).**
-- *Profile:* fertility 1.5, infant mortality 8, female life expectancy 79.
+**C4, Portugal (Level 4): low fertility, long lives, high income.**
+- *Profile:* fertility 1.5, infant mortality 8, female life expectancy 79. Its illiteracy (13% female) is a legacy of older generations' schooling.
 - *Members:* Western and Central Europe, North America, Japan, Australia.
 - *Surprises:*
-  - **Cuba** (about $2,000 GDP per capita) is the 6th most typical member, because its health and fertility indicators match rich countries.
-  - **Peru** is the member furthest from the centre, a boundary case.
+  - **Cuba** (about \$2,000 GDP), **Bulgaria**, **Suriname** and **Uruguay** share the cluster with Switzerland because their health and fertility match the rich world.
+  - **Peru** is the member farthest from the centre, a boundary case.
 
-Clusters describe *how people live*, not only GDP.
+Clusters describe *how people live*, not only how much they earn.
